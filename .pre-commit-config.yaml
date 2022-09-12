@@ -1,0 +1,21 @@
+repos:
+-   repo: https://github.com/asottile/seed-isort-config
+    rev: v2.2.0
+    hooks:
+    - id: seed-isort-config
+-   repo: https://github.com/pre-commit/mirrors-isort
+    rev: v5.10.1
+    hooks:
+    - id: isort
+-   repo: https://github.com/ambv/black
+    rev: 22.3.0
+    hooks:
+    - id: black
+-   repo: https://github.com/pycqa/flake8
+    rev: 5.0.1
+    hooks:
+    - id: flake8
+      additional_dependencies: [
+        "flake8-import-order==0.18.1",
+        "Flake8-pyproject==1.1.0.post0"
+      ]

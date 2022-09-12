@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "utonium"
+version = "0.1.0"
+description = "The Slack Bolt plugin handler it always wanted."
+authors = ["Grafeas Group Ltd. <devs@grafeas.org>"]
+readme = "README.md"
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+slack-bolt = "^1.14.3"
+slack-sdk = "^3.18.3"
+Flake8-pyproject = "^1.1.0.post0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^22.8.0"
+isort = "^5.10.1"
+seed-isort-config = "^2.2.0"
+flake8 = "^5.0.4"
+pre-commit = "^2.20.0"
+
+[tool.isort]
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+known_third_party = ["slack_bolt", "slack_sdk"]
+skip = ["venv", ".venv", "env"]
+
+[tool.flake8]
+ignore = ["ANN101", "ANN401", "D100", "D101", "D105", "D106", "W503", "E203"]
+import-order-style = "pycharm"
+max-complexity = 10
+max-line-length = 90
+use-varnames-strict-mode = true
+exclude = [".git", "__pycache__", "build", "dist", ".venv"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
