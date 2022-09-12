@@ -41,6 +41,8 @@ class PluginManager:
         slack_app: App,
         interactive_mode: bool = False,
         reaction_added_callback: Callable = None,
+        users_dict: dict[str, Any] = None,
+        rooms_dict: dict[str, str] = None,
     ) -> None:
         self.plugins: list[Plugin] = list()
         self.callbacks: list[Callable] = list()
@@ -49,8 +51,8 @@ class PluginManager:
         self.app = slack_app
         self.interactive_mode = interactive_mode
         self.cache = {}
-        self.users_dict: dict[str, Any] = {}
-        self.rooms_dict: dict[str, str] = {}
+        self.users_dict: dict[str, Any] = users_dict
+        self.rooms_dict: dict[str, str] = rooms_dict
 
         def reaction_sinkhole(payload: Payload) -> None:
             """Absorb and ignore all reaction events if no handler is configured."""
@@ -67,30 +69,32 @@ class PluginManager:
 
     def init(self):
         """Ask Slack for information that is only known at runtime."""
-        # Define the list of users (conversion ID <-> username)
-        # 'Any' here is either a list or a str; mypy can't handle that.
-        # See https://stackoverflow.com/a/62862029
-        self.users_dict = {"ids_only": []}
-        users = self.app.client.users_list()
-        for user in users["members"]:
-            if not user["deleted"]:
-                # Extract the display name if available
-                name = (
-                    user.get("profile", {}).get("display_name")
-                    or user.get("real_name")
-                    or user["id"]
-                )
-                self.users_dict[user["id"]] = name
-                self.users_dict[name] = user["id"]
-                self.users_dict["ids_only"].append(user["id"])
+        if not self.users_dict:
+            # Define the list of users (conversion ID <-> username)
+            # 'Any' here is either a list or a str; mypy can't handle that.
+            # See https://stackoverflow.com/a/62862029
+            self.users_dict = {"ids_only": []}
+            users = self.app.client.users_list()
+            for user in users["members"]:
+                if not user["deleted"]:
+                    # Extract the display name if available
+                    name = (
+                        user.get("profile", {}).get("display_name")
+                        or user.get("real_name")
+                        or user["id"]
+                    )
+                    self.users_dict[user["id"]] = name
+                    self.users_dict[name] = user["id"]
+                    self.users_dict["ids_only"].append(user["id"])
 
-        # Define the list of rooms (useful to retrieve the ID of the rooms,
-        # knowing their name)
-        self.rooms_dict = {}
-        rooms = self.app.client.conversations_list()
-        for room in rooms["channels"]:
-            self.rooms_dict[room["id"]] = room["name"]
-            self.rooms_dict[room["name"]] = room["id"]
+        if not self.rooms_dict:
+            # Define the list of rooms (useful to retrieve the ID of the rooms,
+            # knowing their name)
+            self.rooms_dict = {}
+            rooms = self.app.client.conversations_list()
+            for room in rooms["channels"]:
+                self.rooms_dict[room["id"]] = room["name"]
+                self.rooms_dict[room["name"]] = room["id"]
 
         # Get information about ourselves
         own_data = self.app.client.auth_test().data

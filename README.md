@@ -20,7 +20,7 @@ Working with Slack is sometimes extremely painful. We've been working with Slack
 Adding `utonium` to a `slack-bolt` project is fairly hassle-free, though there are some things you'll need to figure out beforehand, like "where am I going to put my plugin folder".
 
 - Add utonium to your project
-  - For [Poetry](https://python-poetry.org/), add the following line manually to your `pyproject.toml`: `utonium = { git = "https://github.com/GrafeasGroup/utonium.git", branch = "main" }`, then run `poetry install` to make the magic happen.
+  - For [Poetry](https://python-poetry.org/), add the following line manually to your `pyproject.toml`: `utonium = { git = "https://github.com/GrafeasGroup/utonium.git", branch = "main" }`, then run `poetry lock --no-update && poetry install` to make the magic happen.
 - Identify where you're going to put your commands. The convention is a folder called `commands` located at the top level of your app. For example: `yourapp.commands`.
 - Instantiate the plugin system and hook up the official listeners.
 
