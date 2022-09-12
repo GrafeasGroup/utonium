@@ -1,8 +1,4 @@
 name: Bump Major Version
-on:
-  push:
-    branches:
-      - main
 
 on:
   pull_request:
