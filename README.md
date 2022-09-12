@@ -59,12 +59,18 @@ def reaction_added(ack, payload, client, context, say):
     ack()
     plugin_manager.reaction_received(payload, client, context, say)
 
+    
+def my_reaction_handler(payload: utonium.Payload) -> None:
+  ...
 
 if __name__ == "__main__":
     plugin_manager = utonium.PluginManager(
         command_prefixes=("!", f"@{USERNAME}", f"<@{ME}>"),
         command_folder=Path("yourapp/commands/"),
         slack_app=app,
+        # this one's only necessary if you need to deal with reactions
+        # as they don't work the same way that normal plugins do.
+        reaction_added_callback=my_reaction_handler
     )
     plugin_manager.load_all_plugins()
     SocketModeHandler(app, os.environ.get("slack_websocket_token")).start()
