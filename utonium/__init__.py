@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import importlib
+import importlib.util
 import logging
 import re
 import traceback
@@ -189,18 +190,22 @@ class PluginManager:
 
     def find_plugins(self) -> list[str]:
         modules = glob.glob(join(self.command_folder, "*.py"))
-        return [
-            basename(f)[:-3]  # trim off the .py bit
-            for f in modules
-            if isfile(f) and not f.endswith("__init__.py")
-        ]
+        return [f for f in modules if isfile(f) and not f.endswith("__init__.py")]
 
     def load_plugin_file(self, name: str) -> None:
-        """Attempt to import the requested file and load the plugin definition."""
+        """
+        Attempt to import the requested file and load the plugin definition.
+
+        The plugin will come in the format of "python/path/to/file.py", which
+        we can pass directly to importlib and let it figure it out.
+        """
 
         # The plugin definition is stored in a special variable called PLUGIN at the
         # top level of the module. If it's not there, raise an exception.
-        module = importlib.import_module(f"{str(self.command_folder)}.{name}")
+        spec = importlib.util.spec_from_file_location(basename(name)[:-3], name)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
         definition = module.PLUGIN
         self.register_plugin(**definition.to_dict())
 
