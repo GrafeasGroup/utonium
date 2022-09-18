@@ -12,26 +12,88 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from slack_bolt import App
+from slack_sdk.models import blocks
 from slack_sdk.web.client import WebClient
 
 log = logging.getLogger(__name__)
 
-
 Plugin = dict[str, Any]
+
+EVERYTHING_REGEX: str = r".*"
+
+
+class UtoniumException(Exception):
+    pass
 
 
 @dataclass
 class Plugin:
-    callable: Callable
-    regex: str
+    # A standard function that takes a message event.
+    func: Callable = None
+    # A function that takes a Reaction Added / Reaction Removed event.
+    reaction_func: Callable = None
+    # A function that takes an Action (from Slack Blocks) event.
+    block_kit_action_func: Callable = None
+
+    # the default message regex
+    regex: str = None
+    # regex of emoji names (no colons) to watch for as reactions
+    reaction_regex: str = None
+    # regex to trigger the block_kit_action_func
+    block_kit_action_regex: str = None
+
+    # regex flags to modify the default regex
     flags: int = None
+    # regex flags to modify the reaction regex
+    reaction_regex_flags: int = None
+    # regex flags to modify the action regex
+    block_kit_action_regex_flags: int = None
+
+    # a function that will be called on every event.
     callback: Callable = None
+    # should this plugin trigger if the command prefix is not there?
     ignore_prefix: bool = False
-    help: str = None
+    # should this plugin run in interactive mode?
     interactive_friendly: bool = True
 
-    def to_dict(self):
+    def get(self, item, default):
+        return getattr(self, item, default)
+
+    def to_dict(self) -> dict:
+        """Return the plugin definition in Dict format."""
         return asdict(self)
+
+    def get_primary_func(self):
+        funcs = [self.func, self.reaction_func, self.block_kit_action_func]
+        primary_func = next((option for option in funcs if option is not None), None)
+        return primary_func
+
+    def __doc__(self) -> Optional[str]:
+        """
+        Return the docstring of the plugin.
+
+        Checks `func` first, then `reaction_func` and finally `block_kit_action_func`.
+        If no docstring is found, None is returned.
+        """
+        pfunc = self.get_primary_func()
+        return pfunc.__doc__ if pfunc.__doc__ else None
+
+    def validate(self) -> None:
+        """Make sure that there is a valid callable with a valid way to call it."""
+        if not any([self.func, self.reaction_func, self.block_kit_action_func]):
+            raise UtoniumException("Missing function to call!")
+        if not any([self.regex, self.reaction_regex, self.block_kit_action_regex]):
+            raise UtoniumException("Missing regex for plugin!")
+        matched_sets = {
+            self.func: self.regex,
+            self.reaction_func: self.reaction_regex,
+            self.block_kit_action_func: self.block_kit_action_regex,
+        }
+        for func, regex in matched_sets.items():
+            if func and not regex:
+                raise UtoniumException(f"No regex found for func {func}!")
+            if not func and regex:
+                raise UtoniumException("Found regex for missing function!")
 
 
 class PluginManager:
@@ -41,11 +103,12 @@ class PluginManager:
         command_folder: Path,
         slack_app: App,
         interactive_mode: bool = False,
-        reaction_added_callback: Callable = None,
         users_dict: dict[str, Any] = None,
         rooms_dict: dict[str, str] = None,
     ) -> None:
         self.plugins: list[Plugin] = list()
+        self.reaction_plugins: list[Plugin] = list()
+        self.block_kit_action_plugins: list[Plugin] = list()
         self.callbacks: list[Callable] = list()
         self.command_prefixes = command_prefixes
         self.command_folder = command_folder
@@ -54,16 +117,6 @@ class PluginManager:
         self.cache = {}
         self.users_dict: dict[str, Any] = users_dict
         self.rooms_dict: dict[str, str] = rooms_dict
-
-        def reaction_sinkhole(payload: Payload) -> None:
-            """Absorb and ignore all reaction events if no handler is configured."""
-            pass
-
-        if not reaction_added_callback:
-            log.warning("No reaction callback registered. Sinkholing all reactions.")
-            self.reaction_added_callback = reaction_sinkhole
-        else:
-            self.reaction_added_callback = reaction_added_callback
 
         # let's kick this pig
         self.init()
@@ -120,24 +173,23 @@ class PluginManager:
 
         return None
 
-    def get_plugin(self, message: str) -> Plugin | None | bool:
+    def get_plugin(self, payload: Payload) -> Plugin | None | bool:
         """Get the plugin corresponding to the given message."""
 
-        def test_plugin(plg, text: str) -> Plugin | None | bool:
+        def test_plugin(plg: Plugin, text: str) -> Plugin | None | bool:
             """Test if the plugin can handle the given text."""
-            if re.search(plg.get("regex", None), text):
-                if self.interactive_mode and not plg["interactive_friendly"]:
+            if re.search(plg.regex, text):
+                if self.interactive_mode and not plg.interactive_friendly:
                     log.error(
-                        f"Plugin {plg['callable']} cannot be run in"
-                        f" interactive mode."
+                        f"Plugin {plg['func']} cannot be run in" f" interactive mode."
                     )
                     return False
                 return plugin
             return None
 
-        prefix_plugins = [
-            plugin for plugin in self.plugins if not plugin["ignore_prefix"]
-        ]
+        message = payload.get_text()
+
+        prefix_plugins = [plugin for plugin in self.plugins if not plugin.ignore_prefix]
 
         # If the command has a prefix, look at the prefix plugins first
         if cmd_text := self.try_get_command_text(message):
@@ -146,9 +198,7 @@ class PluginManager:
                 if result is not None:
                     return result
 
-        no_prefix_plugins = [
-            plugin for plugin in self.plugins if plugin["ignore_prefix"]
-        ]
+        no_prefix_plugins = [plugin for plugin in self.plugins if plugin.ignore_prefix]
 
         # Otherwise, look at plugins without the prefix
         for plugin in no_prefix_plugins:
@@ -164,29 +214,36 @@ class PluginManager:
         for func in self.callbacks:
             func(data)
 
-    def register_plugin(
-        self,
-        callable: Callable,
-        regex: str,
-        flags=None,
-        callback: Callable = None,
-        ignore_prefix: bool = False,
-        help: str = None,
-        interactive_friendly: bool = True,
-    ) -> None:
-        regex = re.compile(regex, flags if flags else 0)
-        self.plugins.append(
-            {
-                "callable": callable,
-                "regex": regex,
-                "ignore_prefix": ignore_prefix,
-                "help": help,
-                "interactive_friendly": interactive_friendly,
-            }
+    def register_plugin(self, plg: Plugin) -> None:
+        if plg.regex:
+            plg.regex = re.compile(plg.regex, plg.flags or 0)
+        if plg.reaction_regex:
+            plg.reaction_regex = re.compile(
+                plg.reaction_regex, plg.reaction_regex_flags or 0
+            )
+        if plg.block_kit_action_regex:
+            plg.block_kit_action_regex = re.compile(
+                plg.block_kit_action_regex, plg.block_kit_action_regex_flags or 0
+            )
+
+        if plg.func:
+            self.plugins.append(plg)
+        if plg.reaction_func:
+            self.reaction_plugins.append(plg)
+        if plg.block_kit_action_func:
+            self.block_kit_action_plugins.append(plg)
+        if plg.callback:
+            self.callbacks.append(plg.callback)
+
+        plg_func = next(
+            (
+                option
+                for option in [plg.func, plg.reaction_func, plg.block_kit_action_func]
+                if option is not None
+            ),
+            None,
         )
-        if callback:
-            self.callbacks.append(callback)
-        log.info(f"Registered {str(callable)}")
+        log.info(f"Registered {plg_func.__name__}")
 
     def find_plugins(self) -> list[str]:
         modules = glob.glob(join(self.command_folder, "*.py"))
@@ -206,8 +263,11 @@ class PluginManager:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
-        definition = module.PLUGIN
-        self.register_plugin(**definition.to_dict())
+        definition: Plugin = module.PLUGIN
+        # Ensure it has all the necessary pieces and raise an exception if not
+        definition.validate()
+
+        self.register_plugin(definition)
 
     def load_all_plugins(self):
         plugins = self.find_plugins()
@@ -243,10 +303,16 @@ class PluginManager:
             return
 
         log.debug(f"I received: {message} from {user_who_sent_message}")
+
+        # intercept help message so we can generate it ourselves
+        if self.clean_text(message) == "help":
+            self.send_help_message(payload)
+            return
+
         # search all the loaded plugins to see if any of the regex's match
-        plugin = self.get_plugin(message)
+        plugin = self.get_plugin(payload)
         if plugin:
-            plugin["callable"](payload)
+            plugin.func(payload)
         elif plugin is False:
             # we're in interactive mode and hit a locked plugin, so we just need
             # to skip the else block
@@ -263,6 +329,49 @@ class PluginManager:
         # register a separate callback function in a class for the command. See
         # bubbles.commands.yell for an example implementation.
         self.process_plugin_callbacks(payload)
+
+    def send_help_message(self, payload: Payload) -> None:
+        def format_text(data: dict) -> list[blocks.Block]:
+            message_blocks = [
+                blocks.HeaderBlock(text="Help is on the way!"),
+                blocks.SectionBlock(
+                    text="Here all the commands that are currently loaded:"
+                ),
+                blocks.DividerBlock(),
+            ]
+
+            for name, docstring in data.items():
+                message_blocks += [
+                    blocks.SectionBlock(
+                        fields=[
+                            blocks.MarkdownTextObject(text=f"*{name}*"),
+                            blocks.MarkdownTextObject(text=docstring),
+                        ]
+                    )
+                ]
+
+            return message_blocks
+
+        plugins_with_help = dict()
+        for plugin in self.plugins:
+            if plugin.__doc__() is not None:
+                # grab the name of the command and the help string.
+                func = plugin.get_primary_func()
+                if hasattr(func, "__name__"):
+                    # we're looking at a function.
+                    # <function myfunc at 0x7f28aa33e8b0>
+                    plugin_name = func.__name__
+                else:
+                    # we're looking at a class.
+                    # <bound method MyPlugin.myfunc of
+                    # <__main__.MyPlugin object at 0x7f28aa408070>>
+                    plugin_name = func.__class__.name__
+                plugins_with_help[plugin_name] = plugin.__doc__()
+        # sort that sucker alphabetically
+        plugins_with_help = {
+            key: value for key, value in sorted(plugins_with_help.items())
+        }
+        payload.say(blocks=format_text(plugins_with_help))
 
     def clean_text(self, text: str | list) -> str:
         """
@@ -304,10 +413,37 @@ class PluginManager:
         payload_obj = Payload(
             client=client, slack_payload=payload, say=say, context=context, meta=self
         )
-        try:
-            self.reaction_added_callback(payload_obj)
-        except:  # noqa: E722
-            say(f"Computer says noooo: \n```\n{traceback.format_exc()}```")
+
+        for plugin in self.reaction_plugins:
+            if re.search(plugin.reaction_regex, payload_obj.get_reaction()):
+                if self.interactive_mode and not plugin.interactive_friendly:
+                    log.error(
+                        f"Plugin {plugin.reaction_func} cannot be run in"
+                        f" interactive mode."
+                    )
+                try:
+                    plugin.reaction_func(payload_obj)
+                except:  # noqa: E722
+                    say(f"Computer says noooo: \n```\n{traceback.format_exc()}```")
+
+    def action_received(self, payload, client, context, say) -> None:
+        payload_obj = Payload(
+            client=client, slack_payload=payload, say=say, context=context, meta=self
+        )
+        for plugin in self.block_kit_action_plugins:
+            if re.search(plugin.block_kit_action_regex, payload_obj.get_reaction()):
+                if self.interactive_mode and not plugin.interactive_friendly:
+                    log.error(
+                        f"Plugin {plugin.block_kit_action_func} cannot be run in"
+                        f" interactive mode."
+                    )
+                try:
+                    plugin.block_kit_action_func(payload_obj)
+                    # We should only receive one action at a time and each
+                    # action should only trigger one thing.
+                    return
+                except:  # noqa: E722
+                    say(f"Computer says noooo: \n```\n{traceback.format_exc()}```")
 
 
 class Payload:
@@ -374,6 +510,9 @@ class Payload:
     def is_reaction(self) -> bool:
         return self._slack_payload.get("reaction")
 
+    def is_block_kit_action(self) -> bool:
+        return self.get_event_type() in ["block_actions", "interactive_message"]
+
     def get_channel(self) -> Optional[str]:
         """Return the channel the message originated from."""
         return self._slack_payload.get("channel")
@@ -402,6 +541,14 @@ class Payload:
         - blue_blog_onr
         """
         return self._slack_payload.get("reaction")
+
+    def get_block_kit_action(self) -> Optional[str]:
+        """If this is a block kit action, return the value of the action."""
+        if not self.is_block_kit_action():
+            return
+        # If it's an action, it should have the following structure
+        # https://api.slack.com/reference/interaction-payloads/block-actions#examples
+        return self._slack_payload["actions"][0].get("value")
 
     def get_reaction_message(self) -> Optional[dict]:
         """
