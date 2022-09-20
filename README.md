@@ -89,6 +89,8 @@ from utonium import Payload, Plugin
 # one thing: the Payload. It's included here as a type hint so that we can
 # take advantage of the type hinting in our editor.
 def ping(payload: Payload) -> None:
+    """!ping - PONG"""  # <- this will be displayed in the help message
+    
     # The Payload has a lot of very useful things attached to it and will
     # always attempt to act on the message that triggered it, so in this
     # case `payload.say` will post a message to the channel that the message
@@ -111,7 +113,7 @@ def ping(payload: Payload) -> None:
 # it will not be listed in the `help` menu by default. You can override
 # the built-in help command by writing your own with the name `help.py`.
 # See `utonium.Plugin` for all of the attributes that can be set here.
-PLUGIN = Plugin(callable=ping, regex=r"^ping$", help="!ping - PONG")
+PLUGIN = Plugin(func=ping, regex=r"^ping$")
 ```
 
 Depending on your logging settings, when you start your app, you should see one line of console output for each command loaded. By default, it looks like this:
