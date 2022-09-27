@@ -431,7 +431,9 @@ class PluginManager:
             client=client, slack_payload=payload, say=say, context=context, meta=self
         )
         for plugin in self.block_kit_action_plugins:
-            if re.search(plugin.block_kit_action_regex, payload_obj.get_reaction()):
+            if re.search(
+                plugin.block_kit_action_regex, payload_obj.get_block_kit_action()
+            ):
                 if self.interactive_mode and not plugin.interactive_friendly:
                     log.error(
                         f"Plugin {plugin.block_kit_action_func} cannot be run in"
@@ -511,7 +513,11 @@ class Payload:
         return self._slack_payload.get("reaction")
 
     def is_block_kit_action(self) -> bool:
-        return self.get_event_type() in ["block_actions", "interactive_message"]
+        return self.get_event_type() in [
+            "block_actions",
+            "interactive_message",
+            "button",
+        ]
 
     def get_channel(self) -> Optional[str]:
         """Return the channel the message originated from."""
