@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "utonium"
-version = "0.5.1"
+version = "0.6.0"
 description = "The Slack Bolt plugin handler it always wanted."
 authors = ["Grafeas Group Ltd. <devs@grafeas.org>"]
 readme = "README.md"
