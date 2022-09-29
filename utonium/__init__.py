@@ -430,6 +430,11 @@ class PluginManager:
         payload_obj = Payload(
             client=client, slack_payload=payload, say=say, context=context, meta=self
         )
+
+        if not payload_obj.get_block_kit_action():
+            # something's wonky or it's a link button. Just return so that all is good.
+            return
+
         for plugin in self.block_kit_action_plugins:
             if re.search(
                 plugin.block_kit_action_regex, payload_obj.get_block_kit_action()
