@@ -6,6 +6,8 @@ from utonium import Payload
 class StatusContextBlock(blocks.ContextBlock):
     """
     An intentionally limited Slack message block for displaying status steps.
+    Not for direct use -- if you're looking for a pre-built way to use this,
+    look at `ContextStepMessage`.
 
     Sets a context message of the text when initiated. Example usage:
 
@@ -24,11 +26,15 @@ class StatusContextBlock(blocks.ContextBlock):
         start_emoji: str = "spinner",
         success_emoji: str = "white_check_mark",
         failure_emoji: str = "x",
+        info_emoji: str = "information_source",
+        warning_emoji: str = "warning",
     ) -> None:
         self.text = text
         self.success_emoji = success_emoji
         self.failure_emoji = failure_emoji
         self.start_emoji = start_emoji
+        self.info_emoji = info_emoji
+        self.warning_emoji = warning_emoji
 
         self.child = blocks.PlainTextObject(
             text=self.get_message(self.start_emoji, self.text), emoji=True
@@ -41,6 +47,12 @@ class StatusContextBlock(blocks.ContextBlock):
 
     def failure(self) -> None:
         self.child.text = self.get_message(self.failure_emoji, self.text)
+
+    def info(self) -> None:
+        self.child.text = self.get_message(self.info_emoji, self.text)
+
+    def warning(self) -> None:
+        self.child.text = self.get_message(self.warning_emoji, self.text)
 
     def get_message(self, emoji: str, text: str) -> str:
         emoji = self.format_emoji(emoji)
@@ -125,6 +137,26 @@ class ContextStepMessage:
             `end_text`: str. Display a string at the bottom of the message.
         """
         self.get_latest().success()
+        self._update_message(end_text=end_text)
+
+    def step_is_info(self, end_text: str = None) -> None:
+        """
+        Mark the most recent step as completed with an info symbol.
+
+        Args:
+            `end_text`: str. Display a string at the bottom of the message.
+        """
+        self.get_latest().info()
+        self._update_message(end_text=end_text)
+
+    def step_is_warning(self, end_text: str = None) -> None:
+        """
+        Mark the most recent step as completing with a warning.
+
+        Args:
+            `end_text`: str. Display a string at the bottom of the message.
+        """
+        self.get_latest().warning()
         self._update_message(end_text=end_text)
 
     def step_failed(self, end_text: str = None, error: bool = True) -> None:
